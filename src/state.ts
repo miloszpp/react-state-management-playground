@@ -17,7 +17,7 @@ export interface AnalysisResult {
   sentiment: "positive" | "negative";
 }
 
-export interface PanelBuilderState {
+export interface SentimentAnalyzerState {
   text: string;
   resultState:
     | { type: "Empty" }
@@ -25,17 +25,17 @@ export interface PanelBuilderState {
     | { type: "Success"; result: AnalysisResult };
 }
 
-export type PanelBuilderAction =
+export type SentimentAnalyzerAction =
   | { type: "AnalysisRequested"; text: string }
   | { type: "AnalysisStarted"; taskId: number }
   | { type: "AnalysisFinished"; results: AnalysisResult }
   | { type: "AnalysisCancellationRequested" }
   | { type: "AnalysisCancelled" };
 
-const panelBuilderReducer = (
-  state: PanelBuilderState,
-  action: PanelBuilderAction
-): PanelBuilderState => {
+const sentimentAnalyzerReducer = (
+  state: SentimentAnalyzerState,
+  action: SentimentAnalyzerAction
+): SentimentAnalyzerState => {
   switch (action.type) {
     case "AnalysisFinished":
       return {
@@ -59,13 +59,13 @@ const panelBuilderReducer = (
   }
 };
 
-const startAnalysisEpic: Epic<PanelBuilderAction> = pipe(
+const startAnalysisEpic: Epic<SentimentAnalyzerAction> = pipe(
   ofType("AnalysisRequested"),
   switchMap((action) => startAnalysis(action.text)),
   map((task) => ({ type: "AnalysisStarted", taskId: task.id }))
 );
 
-const pollAnalysisResultsEpic: Epic<PanelBuilderAction> = (action$) =>
+const pollAnalysisResultsEpic: Epic<SentimentAnalyzerAction> = (action$) =>
   action$.pipe(
     ofType("AnalysisStarted"),
     switchMap((action) =>
@@ -82,7 +82,7 @@ const pollAnalysisResultsEpic: Epic<PanelBuilderAction> = (action$) =>
     }))
   );
 
-const cancelAnalysisEpic: Epic<PanelBuilderAction> = (action$) =>
+const cancelAnalysisEpic: Epic<SentimentAnalyzerAction> = (action$) =>
   action$.pipe(
     ofType("AnalysisCancellationRequested"),
     withLatestFrom(action$.pipe(ofType("AnalysisStarted"))),
@@ -98,18 +98,21 @@ const epic = combineEpics(
   cancelAnalysisEpic
 );
 
-const initialState: PanelBuilderState = {
+const initialState: SentimentAnalyzerState = {
   text: "",
   resultState: { type: "Empty" },
 };
 
-export const usePanelBuilderState = () => {
-  const [state, rawDispatch] = useReducer(panelBuilderReducer, initialState);
+export const useSentimentAnalyzerState = () => {
+  const [state, rawDispatch] = useReducer(
+    sentimentAnalyzerReducer,
+    initialState
+  );
 
-  const subject = useMemo(() => new Subject<PanelBuilderAction>(), []);
+  const subject = useMemo(() => new Subject<SentimentAnalyzerAction>(), []);
 
-  const dispatch: Dispatch<PanelBuilderAction> = useCallback(
-    (action: PanelBuilderAction) => {
+  const dispatch: Dispatch<SentimentAnalyzerAction> = useCallback(
+    (action: SentimentAnalyzerAction) => {
       subject.next(action);
       rawDispatch(action);
     },

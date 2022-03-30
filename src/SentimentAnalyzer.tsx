@@ -1,15 +1,15 @@
 import React, { useState } from "react";
 import {
   AnalysisResult,
-  PanelBuilderAction,
-  PanelBuilderState,
-  usePanelBuilderState,
+  SentimentAnalyzerAction,
+  SentimentAnalyzerState,
+  useSentimentAnalyzerState,
 } from "./state";
 
 const SentimentInput: React.FC<{
-  dispatch: React.Dispatch<PanelBuilderAction>;
+  dispatch: React.Dispatch<SentimentAnalyzerAction>;
   text: string;
-  resultState: PanelBuilderState["resultState"];
+  resultState: SentimentAnalyzerState["resultState"];
 }> = ({ text, dispatch, resultState }) => {
   const [localText, setLocalText] = useState(text);
   return (
@@ -46,7 +46,7 @@ const SentimentVisualization: React.FC<{ results: AnalysisResult }> = ({
 };
 
 export const SentimentAnalyzer = () => {
-  const [state, dispatch] = usePanelBuilderState();
+  const [state, dispatch] = useSentimentAnalyzerState();
   return (
     <div>
       <SentimentInput
