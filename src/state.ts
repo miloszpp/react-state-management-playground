@@ -1,77 +1,105 @@
 import { Dispatch, useCallback, useEffect, useMemo, useReducer } from "react";
-import { Observable, of, Subject } from "rxjs";
-import { catchError, map, mapTo, switchMap, tap } from "rxjs/operators";
-import { combineEpics, ofType } from "./epics";
-import { fetchPanelData } from "./network";
+import { pipe, Subject } from "rxjs";
+import {
+  delay,
+  filter,
+  map,
+  repeatWhen,
+  switchMap,
+  takeUntil,
+  takeWhile,
+  withLatestFrom,
+} from "rxjs/operators";
+import { combineEpics, Epic, ofType } from "./epics";
+import { cancelTask, getTaskStatus, startAnalysis } from "./network";
 
-export interface QueryResults {
-  series: { x: number; y: number }[][];
+export interface AnalysisResult {
+  sentiment: "positive" | "negative";
 }
 
 export interface PanelBuilderState {
-  query: string;
+  text: string;
   resultState:
     | { type: "Empty" }
     | { type: "Loading" }
-    | { type: "Success"; results: QueryResults }
-    | { type: "Error"; error: string };
+    | { type: "Success"; result: AnalysisResult };
 }
 
 export type PanelBuilderAction =
-  | { type: "QuerySubmitted"; query: string }
-  | { type: "ResultsLoaded"; results: QueryResults }
-  | { type: "QueryFailed"; error: string }
-  | { type: "DummyAction" };
+  | { type: "AnalysisRequested"; text: string }
+  | { type: "AnalysisStarted"; taskId: number }
+  | { type: "AnalysisFinished"; results: AnalysisResult }
+  | { type: "AnalysisCancellationRequested" }
+  | { type: "AnalysisCancelled" };
 
 const panelBuilderReducer = (
   state: PanelBuilderState,
   action: PanelBuilderAction
 ): PanelBuilderState => {
   switch (action.type) {
-    case "ResultsLoaded":
+    case "AnalysisFinished":
       return {
         ...state,
-        resultState: { type: "Success", results: action.results },
+        resultState: { type: "Success", result: action.results },
       };
-    case "QueryFailed":
+    case "AnalysisRequested":
       return {
         ...state,
-        resultState: { type: "Error", error: action.error },
-      };
-    case "QuerySubmitted":
-      return {
-        ...state,
-        query: action.query,
+        text: action.text,
         resultState: { type: "Loading" },
       };
-    case "DummyAction":
+    case "AnalysisCancelled":
+      return {
+        ...state,
+        resultState: { type: "Empty" },
+      };
+    case "AnalysisStarted":
+    case "AnalysisCancellationRequested":
       return state;
   }
 };
 
-const dataFetchingEpic = (
-  action$: Observable<PanelBuilderAction>
-): Observable<PanelBuilderAction> =>
+const startAnalysisEpic: Epic<PanelBuilderAction> = pipe(
+  ofType("AnalysisRequested"),
+  switchMap((action) => startAnalysis(action.text)),
+  map((task) => ({ type: "AnalysisStarted", taskId: task.id }))
+);
+
+const pollAnalysisResultsEpic: Epic<PanelBuilderAction> = (action$) =>
   action$.pipe(
-    ofType("QuerySubmitted"),
-    switchMap((action) => fetchPanelData(action.query)),
-    tap((data) => console.log("received panel data", data)),
-    map((results) => ({ type: "ResultsLoaded", results } as const)),
-    catchError((value) =>
-      of({ type: "QueryFailed", error: `Error: ${value}` } as const)
-    )
+    ofType("AnalysisStarted"),
+    switchMap((action) =>
+      getTaskStatus(action.taskId).pipe(
+        repeatWhen(delay(1000)),
+        takeWhile((response) => response.status === "inProgress", true),
+        takeUntil(action$.pipe(ofType("AnalysisCancellationRequested")))
+      )
+    ),
+    filter((results) => results.status === "finished"),
+    map((results) => ({
+      type: "AnalysisFinished",
+      results: { sentiment: results.result! },
+    }))
   );
 
-const dummyEpic = (
-  action$: Observable<PanelBuilderAction>
-): Observable<PanelBuilderAction> =>
-  action$.pipe(ofType("QuerySubmitted"), mapTo({ type: "DummyAction" }));
+const cancelAnalysisEpic: Epic<PanelBuilderAction> = (action$) =>
+  action$.pipe(
+    ofType("AnalysisCancellationRequested"),
+    withLatestFrom(action$.pipe(ofType("AnalysisStarted"))),
+    switchMap(([, AnalysisStartedAction]) =>
+      cancelTask(AnalysisStartedAction.taskId)
+    ),
+    map(() => ({ type: "AnalysisCancelled" }))
+  );
 
-// todo try combining multiple epics
-const epic = combineEpics(dataFetchingEpic, dummyEpic);
+const epic = combineEpics(
+  startAnalysisEpic,
+  pollAnalysisResultsEpic,
+  cancelAnalysisEpic
+);
 
 const initialState: PanelBuilderState = {
-  query: "",
+  text: "",
   resultState: { type: "Empty" },
 };
 
@@ -90,7 +118,6 @@ export const usePanelBuilderState = () => {
 
   useEffect(() => {
     const subscription = epic(subject).subscribe((action) => {
-      console.log("epic emitted action", action);
       dispatch(action);
     });
     return () => subscription.unsubscribe();

@@ -1,10 +1,10 @@
 import "./App.css";
-import { PanelBuilder } from "./PanelBuilder";
+import { SentimentAnalyzer } from "./SentimentAnalyzer";
 
 function App() {
   return (
     <div className="App">
-      <PanelBuilder />
+      <SentimentAnalyzer />
     </div>
   );
 }

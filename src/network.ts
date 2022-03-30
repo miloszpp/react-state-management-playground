@@ -1,20 +1,21 @@
-import { QueryResults } from "./state";
+import { map } from "rxjs";
+import { ajax } from "rxjs/ajax";
 
-export const fetchPanelData = (query: string): Promise<QueryResults> => {
-  console.log("Fetching panel data");
-  return new Promise((resolve) =>
-    setTimeout(
-      () =>
-        resolve({
-          series: [
-            [
-              { x: 0, y: 1 },
-              { x: 1, y: 2 },
-              { x: 2, y: 1 },
-            ],
-          ],
-        }),
-      1000
-    )
-  );
-};
+const url = "http://localhost:3001";
+
+export interface AnalyzeTask {
+  id: number;
+  status: "inProgress" | "cancelled" | "finished";
+  result?: "positive" | "negative";
+}
+
+export const startAnalysis = (text: string) =>
+  ajax
+    .post(`${url}/analyze`, { message: text })
+    .pipe(map((ajaxResponse) => ajaxResponse.response as AnalyzeTask));
+
+export const getTaskStatus = (id: number) =>
+  ajax.getJSON<AnalyzeTask>(`${url}/analyze/${id}`);
+
+export const cancelTask = (id: number) =>
+  ajax.post(`${url}/analyze/${id}/cancel`);
